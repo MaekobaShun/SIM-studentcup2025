@@ -1,5 +1,30 @@
 # StudentCup2025
 
+## プロジェクト構造
+
+```
+repo/
+├── README.md
+├── pyproject.toml            # uv/poetryなど（使うなら）
+├── uv.lock                   # uv使うなら
+├── .gitignore
+├── env.example               # APIキー等（本物は.gitignore）
+├── data/                     # git管理しない
+│   ├── raw/
+│   ├── interim/
+│   └── processed/
+├── inputs/                   # 配布されたCSV等を置く運用ならここでもOK
+├── outputs/                  # 実験結果・予測・ログ（git管理しない）
+│   ├── runs/
+│   └── submissions/
+├── notebooks/                # EDA・試行錯誤（最終ロジックはsrcへ）
+├── scripts/                  # 実行入口（train/eval/predictなど）
+├── src/
+│   └── comp/                 # プロジェクト名（例）
+├── tests/                    # 余裕あれば
+└── docs/                     # ルール・メモ・試行過程等
+```
+
 ## 概要
 
 本コンペティションでは、LLM（大規模言語モデル）によって生成された「架空の映画・アニメのあらすじ」から、元ネタとなっている実在の有名作品（映画・アニメ・漫画）のタイトルを予測します。
