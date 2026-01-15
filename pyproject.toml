@@ -9,11 +9,13 @@ dependencies = [
     "numpy",
     "transformers",
     "jupyter",
+    "python-dotenv",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.uv]
-dev-dependencies = []
+[tool.hatch.build.targets.wheel]
+packages = ["src/comp"]
+
