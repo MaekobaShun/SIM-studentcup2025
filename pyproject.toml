@@ -1,0 +1,19 @@
+[project]
+name = "StudentCup2025"
+version = "0.1.0"
+description = "SIM-studentcup2025 competition project"
+readme = "README.md"
+requires-python = ">=3.9.5"
+dependencies = [
+    "pandas",
+    "numpy",
+    "transformers",
+    "jupyter",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = []
