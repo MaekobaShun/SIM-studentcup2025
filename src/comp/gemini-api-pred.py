@@ -1,8 +1,19 @@
 """
-Gemini API (gemini-3.0-flash) を使ったストーリーマッチング
-base_stories.tsv と fiction_stories_test.tsv を与え、
-どのstoryとどのstoryのペアがあらすじの元となっているかを一括推論する
-20件ずつ17回に分けてリクエストを送信
+【gemini-apiを使って提出する】
+0: Pythonの環境構築をして必要なライブラリをインストールする()
+1: .envファイルを作成して，GEMINI_API_KEY="your gemini api key" を設定する
+2: 設定の部分を書き換える
+    2-1: DATASET_TYPE を 'TRAIN' か 'TEST' に設定する(TRAINは例題データ，TESTは本番データ)
+    2-2: MODEL_NAME を使用するgeminiモデル名に設定する
+    2-3: MIN_ID, MAX_ID を対象とするfiction_storiesのID範囲に設定する
+    2-4: BATCH_SIZE を一度に処理する件数に設定する
+3: 以下のコマンドで実行する
+    python src/comp/gemini-api-pred.py
+
+【メモ】
+今回はgemini-3-flash-preview(無料範囲で使える中で最もよいモデル)を使用する想定です
+BATCH_SIZEを20にしたら時間がかかりすぎたため10にすることを推奨します
+gemini-3-flash-previewは1日に20回までしか処理ができないため，1-170と171-340に分割して実行することを推奨します
 """
 
 import os
@@ -11,6 +22,16 @@ import pandas as pd
 from dotenv import load_dotenv
 import google.generativeai as genai
 from pathlib import Path
+
+# =============================================================================
+# 設定
+# =============================================================================
+DATASET_TYPE = "TEST"
+MODEL_NAME = "gemini-2.5-flash"
+MIN_ID = 1
+MAX_ID = 170
+BATCH_SIZE = 10
+# =============================================================================
 
 # .envからAPIキーを読み込む
 load_dotenv()
@@ -23,10 +44,16 @@ if not GEMINI_API_KEY:
 genai.configure(api_key=GEMINI_API_KEY)
 
 
-def load_data(base_path: str, fiction_path: str):
+def load_data(base_path: str, fiction_path: str, dataset_type: str):
     """データを読み込む"""
     base_df = pd.read_csv(base_path, sep="\t")
     fiction_df = pd.read_csv(fiction_path, sep="\t")
+
+    # TRAINデータの場合、行番号をIDとして追加（1-indexed）
+    if dataset_type == "TRAIN":
+        fiction_df = fiction_df.reset_index(drop=True)
+        fiction_df["id"] = fiction_df.index + 1
+
     return base_df, fiction_df
 
 
@@ -43,7 +70,7 @@ def create_prompt(base_df: pd.DataFrame, fiction_batch: pd.DataFrame) -> str:
     fiction_stories_text = "【合成されたあらすじリスト（fiction_stories）】\n"
     fiction_ids = []
     for _, row in fiction_batch.iterrows():
-        fiction_id = row['id']
+        fiction_id = row["id"]
         fiction_ids.append(fiction_id)
         fiction_stories_text += f"Fiction {fiction_id}:\n"
         fiction_stories_text += f"{row['story']}\n\n"
@@ -85,7 +112,7 @@ Fiction X: ID A, ID B
     return prompt
 
 
-def query_gemini(prompt: str, model_name: str = "gemini-3-flash-preview") -> str:
+def query_gemini(prompt: str, model_name: str) -> str:
     """Gemini APIにクエリを送信する"""
     try:
         model = genai.GenerativeModel(model_name)
@@ -109,49 +136,49 @@ def query_gemini(prompt: str, model_name: str = "gemini-3-flash-preview") -> str
 
 def main():
     base_path = "inputs/base_stories.tsv"
-    fiction_path = "inputs/fiction_stories_test.tsv"
+
+    # DATASET_TYPEに応じてファイルパスを切り替え
+    if DATASET_TYPE == "TRAIN":
+        fiction_path = "inputs/fiction_stories_practice.tsv"
+    elif DATASET_TYPE == "TEST":
+        fiction_path = "inputs/fiction_stories_test.tsv"
+    else:
+        raise ValueError(f"DATASET_TYPE は 'TRAIN' または 'TEST' を指定してください: {DATASET_TYPE}")
+
     output_dir = Path("outputs")
     output_dir.mkdir(exist_ok=True)
 
     print("=" * 80)
+    print(f"設定:")
+    print(f"  DATASET_TYPE: {DATASET_TYPE}")
+    print(f"  MODEL_NAME: {MODEL_NAME}")
+    print(f"  MIN_ID: {MIN_ID}, MAX_ID: {MAX_ID}")
+    print(f"  BATCH_SIZE: {BATCH_SIZE}")
+    print("=" * 80)
     print("データ読み込み中...")
     print("=" * 80)
 
-    base_df, fiction_df = load_data(base_path, fiction_path)
+    base_df, fiction_df = load_data(base_path, fiction_path, DATASET_TYPE)
 
     print(f"Base stories: {len(base_df)} 件")
     print(f"Fiction stories: {len(fiction_df)} 件")
     print()
 
-    # バッチ処理の設定
-    batch_size = 10  # 1度に送るIDの数
-    # 予測対象の区間を定義
-    target_ranges = [
-        (131, 140),
-        (151, 160),
-        (211, 220),
-        (271, 280),
-        (311, 320),
-        (331, 340),
-    ]
-
-    # 各区間からIDリストを作成
-    target_ids = []
-    for start_id, end_id in target_ranges:
-        target_ids.extend(range(start_id, end_id + 1))
-
     # 対象IDのデータをフィルタリング
-    fiction_df_filtered = fiction_df[fiction_df['id'].isin(target_ids)]
-    print(f"対象Fiction stories: {len(fiction_df_filtered)} 件")
-    print(f"対象区間: {target_ranges}")
+    target_ids = list(range(MIN_ID, MAX_ID + 1))
+    fiction_df_filtered = fiction_df[fiction_df["id"].isin(target_ids)]
+    print(f"対象Fiction stories: {len(fiction_df_filtered)} 件 (ID {MIN_ID}-{MAX_ID})")
     print()
 
     # バッチ数を計算
-    num_batches = (len(fiction_df_filtered) + batch_size - 1) // batch_size
+    num_batches = (len(fiction_df_filtered) + BATCH_SIZE - 1) // BATCH_SIZE
+
+    # 全バッチの結果を蓄積するリスト
+    all_responses = []
 
     for batch_idx in range(num_batches):
-        start_idx = batch_idx * batch_size
-        end_idx = start_idx + batch_size
+        start_idx = batch_idx * BATCH_SIZE
+        end_idx = start_idx + BATCH_SIZE
 
         # フィルタリング済みのfiction_dfから該当範囲を取得
         fiction_batch = fiction_df_filtered.iloc[start_idx:end_idx]
@@ -161,9 +188,9 @@ def main():
             continue
 
         # IDの範囲を取得
-        start_id = fiction_batch.iloc[0]['id']
-        end_id = fiction_batch.iloc[-1]['id']
-        id_range = f"{start_id}-{end_id}"
+        batch_start_id = fiction_batch.iloc[0]["id"]
+        batch_end_id = fiction_batch.iloc[-1]["id"]
+        id_range = f"{batch_start_id}-{batch_end_id}"
 
         print("=" * 80)
         print(f"Batch {batch_idx + 1}/{num_batches}: Fiction {id_range} ({len(fiction_batch)}件)")
@@ -174,8 +201,8 @@ def main():
         print(f"プロンプトの文字数: {len(prompt)} 文字")
 
         # Gemini APIにリクエスト
-        print("Gemini API (gemini-3-flash-preview) に問い合わせ中...")
-        response = query_gemini(prompt)
+        print(f"Gemini API ({MODEL_NAME}) に問い合わせ中...")
+        response = query_gemini(prompt, MODEL_NAME)
 
         # デバッグ出力
         print()
@@ -186,16 +213,15 @@ def main():
         print("-" * 40)
         print()
 
-        # ファイルに保存
-        output_file = output_dir / f"gemini3flash_v7_{id_range}.txt"
-        with open(output_file, "w", encoding="utf-8") as f:
-            f.write(f"Batch: {batch_idx + 1}/{num_batches}\n")
-            f.write(f"Fiction IDs: {id_range}\n")
-            f.write(f"件数: {len(fiction_batch)}\n")
-            f.write("=" * 80 + "\n\n")
-            f.write(response)
+        # 結果を蓄積
+        all_responses.append({
+            "batch_idx": batch_idx + 1,
+            "id_range": id_range,
+            "count": len(fiction_batch),
+            "response": response,
+        })
 
-        print(f"結果を保存しました: {output_file}")
+        print(f"Batch {batch_idx + 1}/{num_batches} 完了")
         print()
 
         # 次のリクエストまで5秒待機（最後のバッチ以外）
@@ -204,8 +230,26 @@ def main():
             time.sleep(5)
             print()
 
+    # すべてのバッチ結果を1つのファイルに保存
+    # 形式: {DATASET_TYPE}_{MODEL_NAME}_{MIN_ID}_{MAX_ID}.txt
+    output_file = output_dir / f"{DATASET_TYPE}_{MODEL_NAME}_{MIN_ID}_{MAX_ID}.txt"
+    with open(output_file, "w", encoding="utf-8") as f:
+        f.write(f"DATASET_TYPE: {DATASET_TYPE}\n")
+        f.write(f"MODEL_NAME: {MODEL_NAME}\n")
+        f.write(f"Fiction IDs: {MIN_ID}-{MAX_ID}\n")
+        f.write(f"総件数: {len(fiction_df_filtered)}\n")
+        f.write(f"バッチ数: {num_batches}\n")
+        f.write("=" * 80 + "\n\n")
+
+        for resp in all_responses:
+            f.write(f"【Batch {resp['batch_idx']}/{num_batches}: Fiction {resp['id_range']} ({resp['count']}件)】\n")
+            f.write("-" * 40 + "\n")
+            f.write(resp["response"])
+            f.write("\n" + "-" * 40 + "\n\n")
+
     print("=" * 80)
-    print("全バッチ処理完了")
+    print(f"全バッチ処理完了")
+    print(f"結果を保存しました: {output_file}")
     print("=" * 80)
 
 
