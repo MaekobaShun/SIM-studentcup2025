@@ -27,7 +27,7 @@ from pathlib import Path
 # 設定
 # =============================================================================
 DATASET_TYPE = "TEST"
-MODEL_NAME = "gemini-3-flash-preview"
+MODEL_NAME = "gemini-2.5-flash-preview-09-2025"
 MIN_ID = 1
 MAX_ID = 170
 BATCH_SIZE = 10
@@ -119,7 +119,7 @@ def query_gemini(prompt: str, model_name: str) -> str:
 
         # 生成設定
         generation_config = genai.types.GenerationConfig(
-            temperature=0.0,
+            temperature=0.8,
             max_output_tokens=32768,
         )
 
